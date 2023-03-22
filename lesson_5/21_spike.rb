@@ -12,40 +12,45 @@ module Language
     end
     speech
   end
+
+  def self.pluralize(num)
+    num > 1 ? 's' : ''
+  end
 end
 
 class Competitor
   attr_reader :hand
 
-  def initialize
-    @hand = Hand.new
+  def initialize(target_value)
+    @hand = Hand.new(target_value)
   end
-  
+
   def draw(deck, number = 1)
-    @hand.draw(deck, number)
+    hand.draw(deck, number)
   end
-  
-  def take_turn(deck)
-    puts "would you like to hit or stay?"
-  end
-  
+
   def show_hand
-    Language.joinor(hand.cards, ', the ', 'and the')
+    Language.joinor(hand.cards, ', ', 'and')
   end
-  
+
+  def last_drawn_card
+    hand.cards[-1]
+  end
+
   def hit(deck)
+    hand.draw(deck)
   end
-  
-  def stay(deck)
+
+  def busted?
+    hand.total_score > hand.target_value
   end
 end
 
 class Dealer < Competitor
-  def take_turn
-  end
-  
   def partial_show_hand
-    "the #{hand.cards[0]} and #{hand.cards.size - 1} other cards"
+    facedown_cards = hand.cards.size - 1
+    "#{last_drawn_card} and #{facedown_cards} other card" +
+      Language.pluralize(facedown_cards)
   end
 end
 
@@ -55,25 +60,40 @@ class CardSet
   def initialize
     @cards = []
   end
+
+  def shuffle!
+    cards.shuffle!
+  end
 end
 
 class Hand < CardSet
-  def draw(deck, number = 1)
-    number.times { self.cards << deck.cards.pop }
+  attr_accessor :target_value
+
+  def initialize(target_value = 21)
+    super()
+    @target_value = target_value
   end
-  
-  def total_score(target_val)
+
+  def draw(deck, number = 1)
+    number.times { cards << deck.cards.pop }
+  end
+
+  def total_score
     score = cards.map(&:score).sum # total card totals
     cards.map(&:rank).count(:ace).times do
-      if target_val - score >= 10# option to add 10 for each Ace
+      if target_value - score >= 10 # option to add 10 for each Ace
         score += 10
       end
     end
     score
   end
-  
+
+  def last_drawn_card
+    cards[-1]
+  end
+
   def <=>(other)
-    total_score <=> other.total_score 
+    total_score <=> other.total_score
   end
 end
 
@@ -87,11 +107,7 @@ class Deck < CardSet
         cards << Card.new(rank, suit)
       end
     end
-    shuffle
-  end
-  
-  def shuffle
-    cards.shuffle!
+    shuffle!
   end
 end
 
@@ -110,61 +126,127 @@ class Card
     @suit = suit
     @score = calculate_score(scoring)
   end
-  
+
   def calculate_score(scoring)
     value = scoring[rank]
-    if value == nil
-      raise ArgumentError.new("card has an illegal rank")
-    else
-      value
-    end
+    raise(ArgumentError, "card has an illegal rank") if value.nil?
+    value
   end
-  
+
   def to_s
-    "#{rank.to_s.capitalize} of #{suit.to_s.capitalize}"
+    "the #{rank.to_s.capitalize} of #{suit.to_s.capitalize}"
   end
 end
 
 class TwentyOneGame
   TARGET_VALUE = 21
-  
+
   def initialize
-    @player = Competitor.new
-    @dealer = Dealer.new
+    @player = Competitor.new(TARGET_VALUE)
+    @dealer = Dealer.new(TARGET_VALUE)
     @deck = Deck.new
     @discard = Discard.new
   end
-  
+
   def start
     setup
     display_welcome_message
-    display_game_state
-    # player_turn
-    # dealer_turn
-    # determine_winner
-    # display_winner
+    player_turn
+    if player.busted?
+      puts "You bust!"
+    else
+      dealer_turn
+      if dealer.busted?
+        puts "Dealer busts!"
+      else
+        display_final_game_state
+      end
+    end
+    display_winner
     display_goodbye_message
   end
-  
+
   private
-  
+
   attr_reader :player, :dealer, :deck, :discard
-  
+
   def setup
     player.draw(deck, 2)
     dealer.draw(deck, 2)
   end
-  
+
   def display_welcome_message
     puts "Welcome to #{TARGET_VALUE}!"
   end
-  
-  def display_game_state
-    puts "You have the #{player.show_hand}"
-    puts "The dealer has #{dealer.partial_show_hand}"
-    puts "Your score is #{player.hand.total_score(TARGET_VALUE)}."
+
+  def player_turn
+    display_game_state
+    loop do
+      choice = choose_play
+      if choice == 'h'
+        player.hit(deck)
+        puts "You drew #{player.last_drawn_card}."
+        puts "Your score is #{player.hand.total_score}."
+        break if player.busted?
+      elsif choice == 's'
+        break
+      end
+    end
   end
-  
+
+  def display_game_state
+    puts "You have #{player.show_hand}"
+    puts "The dealer has #{dealer.partial_show_hand}"
+    puts "Your score is #{player.hand.total_score}."
+  end
+
+  def display_final_game_state
+    puts "You have #{player.show_hand}"
+    puts "Your score is #{player.hand.total_score}."
+    puts "The dealer has #{dealer.show_hand}"
+    puts "The dealer's score is #{dealer.hand.total_score}."
+  end
+
+  def choose_play
+    puts "Would you like to (h)it or (s)tay?"
+    choice = nil
+    loop do
+      choice = gets.chomp[0].downcase
+      break if %w(s h).include?(choice)
+      puts "Please enter h to hit or s to stay."
+    end
+    choice
+  end
+
+  def dealer_turn
+    while dealer.hand.total_score < (dealer.hand.target_value - 4)
+      dealer.hit(deck)
+      puts "Dealer hits!"
+    end
+  end
+
+  def display_winner
+    case determine_winner
+    when :player then puts "You win!"
+    when :dealer then puts "Dealer wins!"
+    when :tie then puts "Tie game!"
+    end
+  end
+
+  def determine_winner
+    if player.busted?
+      :dealer
+    elsif dealer.busted?
+      :player
+    else
+      case player.hand <=> dealer.hand
+      when 1 then :player
+      when 0 then :tie
+      when -1 then :dealer
+      end
+    end
+  end
+
   def display_goodbye_message
     puts "Thanks for playing #{TARGET_VALUE}. Goodbye!"
   end

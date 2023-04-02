@@ -12,6 +12,8 @@ module CardScores
     total
   end
 
+  private
+
   def score(rank)
     case rank
     when 2..10 then rank
@@ -78,14 +80,14 @@ class Hand < CardSet
 end
 
 class Player
-  attr_reader :hand
+  attr_reader :hand, :name
 
   def initialize
     @hand = Hand.new
   end
 
   def hit(card)
-    puts "You hit! You draw #{card}."
+    puts "#{name} hits! #{name} draws #{card}."
     hand << card
   end
 
@@ -96,15 +98,33 @@ class Player
   def show_cards
     puts hand.cards
   end
+
+  def choose_name
+    puts "What is your name?"
+    @name = gets.chomp
+  end
+
+  def discard
+    @hand = Hand.new
+  end
+
+  def to_s
+    name
+  end
 end
 
 class Dealer < Player
+  def initialize
+    super
+    @name = "Dealer"
+  end
+
   def show_one_card
     puts "#{hand.cards[0]} and #{hand.cards.size - 1} other cards."
   end
 
   def hit(card)
-    puts "Dealer hits!"
+    puts "#{name} hits!"
     hand << card
   end
 end
@@ -118,7 +138,38 @@ class TwentyOneGame
   end
 
   def play
-    setup
+    display_welcome_message
+    player.choose_name
+    loop do
+      setup
+      game_round
+      break unless play_again?
+      reset
+    end
+    display_goodbye_message
+  end
+
+  private
+
+  attr_reader :deck, :player, :dealer
+  attr_accessor :winner
+
+  # helper methods for play: overall program procedural logic
+  def display_welcome_message
+    clear
+    puts "Welcome to 21!"
+  end
+
+  def setup
+    clear
+    2.times do
+      [player, dealer].each do |participant|
+        participant.hand << deck.deal
+      end
+    end
+  end
+
+  def game_round
     player_turn
     dealer_turn unless player.busted?
     display_busts
@@ -127,23 +178,25 @@ class TwentyOneGame
     display_winner
   end
 
-  private
-
-  attr_reader :deck, :player, :dealer
-  attr_accessor :winner
-
-  def setup
-    2.times do
-      [player, dealer].each do |participant|
-        participant.hand << deck.deal
-      end
-    end
+  def play_again?
+    get_char_choice("Play again?", %w(y n)) == 'y'
   end
 
+  def reset
+    player.discard
+    dealer.discard
+  end
+
+  def display_goodbye_message
+    clear
+    puts "Thanks for playing 21! Goodbye!"
+  end
+
+  # helper methods for game_round - procedural logic for individual games of 21
   def player_turn
     loop do
       display_hands
-      hit_or_stay = get_char_choice("Will you (h)it or (s)tay?", %w(h s))
+      hit_or_stay = get_char_choice("Will #{player} (h)it or (s)tay?", %w(h s))
       break if hit_or_stay == 's'
       clear
       player.hit(deck.deal)
@@ -153,11 +206,11 @@ class TwentyOneGame
 
   def dealer_turn
     clear
-    puts "Dealer's turn!"
+    puts "#{dealer}'s turn!"
     loop do
       display_dealer_hand
       if dealer.hand.total_score >= 17
-        puts "Dealer stays!" unless dealer.busted?
+        puts "#{dealer} stays!" unless dealer.busted?
         break
       end
       dealer.hit(deck.deal)
@@ -167,9 +220,9 @@ class TwentyOneGame
   def display_busts
     clear
     if player.busted?
-      puts "You bust!"
+      puts "#{player} busts!"
     elsif dealer.busted?
-      puts "Dealer busts!"
+      puts "#{dealer} busts!"
     end
   end
 
@@ -183,14 +236,6 @@ class TwentyOneGame
                   end
   end
 
-  def display_winner
-    case winner
-    when :player then puts "You win!"
-    when :dealer then puts "Dealer wins!"
-    when :tie then puts "It's a tie!"
-    end
-  end
-
   def compare_hands(player, dealer)
     case player.hand <=> dealer.hand
     when 1 then :player
@@ -199,10 +244,15 @@ class TwentyOneGame
     end
   end
 
-  def clear
-    system "clear"
+  def display_winner
+    case winner
+    when :player then puts "#{player} wins!"
+    when :dealer then puts "#{dealer} wins!"
+    when :tie then puts "It's a tie!"
+    end
   end
 
+  # methods to display player and dealer hands in different permutations
   def display_hands
     display_player_hand
     display_dealer_hand
@@ -216,25 +266,26 @@ class TwentyOneGame
   end
 
   def display_player_hand
-    puts "Your cards are:"
+    puts "#{player}'s cards are:"
     player.show_cards
-    puts "Your score is #{player.hand.total_score}"
+    puts "#{player}'s score is #{player.hand.total_score}"
     puts
   end
 
   def display_dealer_hand
-    puts "The dealer's cards are:"
+    puts "#{dealer}'s cards are:"
     dealer.show_one_card
     puts
   end
 
   def display_full_dealer_hand
-    puts "The dealer's cards are:"
+    puts "#{dealer}'s cards are:"
     dealer.show_cards
-    puts "The dealer's score is #{dealer.hand.total_score}"
+    puts "#{dealer}'s score is #{dealer.hand.total_score}"
     puts
   end
 
+  # miscellaneous utility methods
   def get_char_choice(message, valid_responses)
     puts message
     choice = nil
@@ -244,6 +295,10 @@ class TwentyOneGame
       puts "Invalid response! Choose one of: #{valid_responses.join(', ')}."
     end
     choice
+  end
+
+  def clear
+    system "clear"
   end
 end
 
